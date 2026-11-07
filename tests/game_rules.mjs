@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {calibratedLevels,gardenHealth,performanceTrend} from '../lib/game-rules.ts';
+const stages=[{game:4,level:1,correct:4,rounds:4},{game:4,level:2,correct:3,rounds:4},{game:4,level:3,correct:2,rounds:4},{game:5,level:1,correct:2,rounds:4},{game:6,level:1,correct:3,rounds:4},{game:6,level:2,correct:4,rounds:4},{game:6,level:3,correct:4,rounds:4},{game:7,level:1,correct:3,rounds:4},{game:7,level:2,correct:1,rounds:4}];
+assert.deepEqual(calibratedLevels(stages),{4:2,5:1,6:3,7:1});
+assert.throws(()=>calibratedLevels(stages.slice(1)));
+assert.throws(()=>calibratedLevels([...stages,stages[0]]));
+const row=(accuracy,date='2026-10-01T12:00:00Z')=>({game:4,level:1,accuracy,date,speed:1200});
+assert.equal(gardenHealth([]),60);assert.equal(gardenHealth([row(75)]),70);assert.equal(gardenHealth([row(74)]),55);
+assert.equal(gardenHealth(Array.from({length:20},()=>row(0))),10);assert.equal(gardenHealth(Array.from({length:20},()=>row(100))),100);
+assert.equal(gardenHealth([{...row(100),game:0}]),60);
+const baseline=Array.from({length:5},(_,i)=>row(90,`2026-10-0${i+1}T12:00:00Z`));
+const falling=[row(80,'2026-10-06T12:00:00Z'),row(70,'2026-10-07T12:00:00Z'),row(60,'2026-10-08T12:00:00Z')];
+assert.equal(performanceTrend([...baseline,...falling]).status,'declining');
+assert.equal(performanceTrend([...baseline,...falling.map(r=>({...r,date:'2026-10-08T12:00:00Z'}))]).status,'observed');
+assert.equal(performanceTrend([...baseline,...falling.slice(0,2)]).status,'building');
+assert.equal(performanceTrend([...baseline,...falling.slice().reverse()]).status,'observed');
+console.log('PASS: calibration thresholds and progression, invalid assessments, garden wins/losses/clamps, legacy exclusion, sustained-trend flags and insufficient/same-day/recovering results.');

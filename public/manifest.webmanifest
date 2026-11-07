@@ -1,0 +1,1 @@
+{"name": "Gentle Grove", "short_name": "Gentle Grove", "description": "A little play. A brighter day.", "start_url": "/login", "scope": "/", "display": "standalone", "background_color": "#ffffff", "theme_color": "#a8edf0", "icons": [{"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]}
