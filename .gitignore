@@ -49,3 +49,7 @@ yarn-error.log*
 
 # Share setup instructions, never local secrets
 !.env.example
+
+# Local database and deployment state
+.data/
+.vercel/

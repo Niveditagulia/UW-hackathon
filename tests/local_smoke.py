@@ -1,6 +1,6 @@
 """Integration checks for the local app. Run with the dev server running."""
-import urllib.request, urllib.error, json, uuid, pathlib, sqlite3
-BASE='http://localhost:5173'
+import urllib.request, urllib.error, json, uuid, pathlib, sqlite3, os
+BASE=os.environ.get('TEST_BASE_URL','http://localhost:5173')
 tag='check_'+uuid.uuid4().hex[:10]
 password='Test-only-password-12345'
 def call(path, body=None, cookie='', origin=BASE):
@@ -29,7 +29,7 @@ try:
  result=expect(call('/api/reports',cookie=cookie),200)
  assert len(result[1]['sessions'])==1
  expect(call('/api/auth',{**body,'username':tag+'_staff','role':'staff','code':'wrong'}),403)
- code=pathlib.Path('.dev.vars').read_text().strip().split('=',1)[1]
+ code=next(line.split('=',1)[1] for line in pathlib.Path('.env.local').read_text().splitlines() if line.startswith('STAFF_REGISTRATION_CODE='))
  _,_,staff=expect(call('/api/auth',{**body,'username':tag+'_staff','role':'staff','code':code}),200)
  _,people,_=expect(call('/api/reports?all=1',cookie=staff),200)
  resident=next(p['id'] for p in people if p['name']=='Test Resident')
@@ -46,7 +46,7 @@ try:
  expect(call('/api/auth',body,origin='https://other.test'),403)
  print('PASS: local registration, saved login, profiles, assessment, games, reports, staff authorization, locking, logout and persistence.')
 finally:
- for file in pathlib.Path('.wrangler/state').rglob('*.sqlite'):
+ for file in pathlib.Path('.data').glob('*.db'):
   db=sqlite3.connect(file)
   try:
    ids=[r[0] for r in db.execute('SELECT id FROM local_accounts WHERE username IN (?,?)',(tag,tag+'_staff'))]

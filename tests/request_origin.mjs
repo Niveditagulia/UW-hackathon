@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {sameOrigin} from '../lib/request-origin.ts';
+const req=(origin,host='127.0.0.1:5173',site='same-origin')=>new Request('http://localhost:5173/api/auth',{headers:{origin,host,'sec-fetch-site':site}});
+assert.equal(sameOrigin(req('http://127.0.0.1:5173')),true);
+assert.equal(sameOrigin(req('http://localhost:5173','localhost:5173')),true);
+assert.equal(sameOrigin(req('http://evil.test')),false);
+assert.equal(sameOrigin(req('http://127.0.0.1:9999')),false);
+assert.equal(sameOrigin(req('http://127.0.0.1:5173','127.0.0.1:5173','cross-site')),false);
+assert.equal(sameOrigin(req('null')),false);
+const original=process.env.VERCEL;process.env.VERCEL='1';
+assert.equal(sameOrigin(req('https://grove.vercel.app','grove.vercel.app')),true);
+assert.equal(sameOrigin(req('http://grove.vercel.app','grove.vercel.app')),false);
+if(original===undefined)delete process.env.VERCEL;else process.env.VERCEL=original;
+console.log('PASS: localhost, numeric loopback, hosted HTTPS, and cross-origin rejection.');

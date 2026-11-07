@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import {sqlDb} from "../../../db/sql";
 import { sameOrigin, privateHeaders } from "../../../lib/access";
 import {
   digest,
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   if (b.action === "logout") {
     const token = (await cookies()).get(sessionCookie)?.value;
     if (token)
-      await env.DB.prepare("DELETE FROM local_sessions WHERE token_hash=?")
+      await sqlDb.prepare("DELETE FROM local_sessions WHERE token_hash=?")
         .bind(await digest(token))
         .run();
     return Response.json(
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   const username = b.username.toLowerCase();
-  let row = await env.DB.prepare(
+  let row = await sqlDb.prepare(
     "SELECT * FROM local_accounts WHERE username=?",
   )
     .bind(username)
@@ -58,8 +58,7 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     const role = b.role === "staff" ? "staff" : "resident";
-    const code = (env as unknown as { STAFF_REGISTRATION_CODE?: string })
-      .STAFF_REGISTRATION_CODE;
+    const code = process.env.STAFF_REGISTRATION_CODE;
     if (
       role === "staff" &&
       (!code || typeof b.code !== "string" || !equal(b.code, code))
@@ -72,7 +71,7 @@ export async function POST(req: Request) {
       id = crypto.randomUUID();
     const hash = await passwordHash(b.password, salt);
     try {
-      await env.DB.prepare(
+      await sqlDb.prepare(
         "INSERT INTO local_accounts (id,username,email,role,salt,password_hash) VALUES (?,?,?,?,?,?)",
       )
         .bind(id, username, username + "@local.grove", role, salt, hash)
@@ -91,12 +90,12 @@ export async function POST(req: Request) {
         { status: 401 },
       );
     const now = Date.now();
-    await env.DB.prepare(
+    await sqlDb.prepare(
       "UPDATE local_accounts SET attempts=0,window_start=? WHERE id=? AND window_start<?",
     )
       .bind(now, row.id, now - 900000)
       .run();
-    const attempt = await env.DB.prepare(
+    const attempt = await sqlDb.prepare(
       "UPDATE local_accounts SET attempts=attempts+1 WHERE id=? AND attempts<5 RETURNING id",
     )
       .bind(row.id)
@@ -119,15 +118,15 @@ export async function POST(req: Request) {
   }
   const token = hex(crypto.getRandomValues(new Uint8Array(32))),
     duration = b.remember === true ? 2592000 : 28800;
-  await env.DB.prepare(
+  await sqlDb.prepare(
     "UPDATE local_accounts SET attempts=0,window_start=? WHERE id=?",
   )
     .bind(Date.now(), row.id)
     .run();
-  await env.DB.prepare("DELETE FROM local_sessions WHERE expires_at<=?")
+  await sqlDb.prepare("DELETE FROM local_sessions WHERE expires_at<=?")
     .bind(Date.now())
     .run();
-  await env.DB.prepare(
+  await sqlDb.prepare(
     "INSERT INTO local_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)",
   )
     .bind(await digest(token), row.id, Date.now() + duration * 1000)
