@@ -1,18 +1,13 @@
 import { identity, sameOrigin, privateHeaders } from "../../../lib/access";
-import { getDb } from "../../../db";
-import { calibrations, profiles } from "../../../db/schema";
-import { eq } from "drizzle-orm";
+import { getSupabase } from "../../../lib/supabase";
 import { calibratedLevels } from "../../../lib/game-rules";
 export async function GET() {
   const u = await identity();
   if (!u) return Response.json({ error: "Sign in required" }, { status: 401 });
-  const c = await getDb()
-    .select()
-    .from(calibrations)
-    .where(eq(calibrations.userId, u.userId))
-    .get();
+  const { data: c, error } = await getSupabase().from("calibrations").select("levels,completed_at").eq("user_id", u.userId).maybeSingle();
+  if (error) throw error;
   return Response.json(
-    c ? { levels: JSON.parse(c.levels), completedAt: c.completedAt } : null,
+    c ? { levels: JSON.parse(c.levels), completedAt: c.completed_at } : null,
     { headers: privateHeaders },
   );
 }
@@ -21,11 +16,8 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid request" }, { status: 403 });
   const u = await identity();
   if (!u) return Response.json({ error: "Sign in required" }, { status: 401 });
-  const profile = await getDb()
-    .select()
-    .from(profiles)
-    .where(eq(profiles.id, u.userId))
-    .get();
+  const { data: profile, error: profileError } = await getSupabase().from("profiles").select("id").eq("id", u.userId).maybeSingle();
+  if (profileError) throw profileError;
   if (!profile)
     return Response.json(
       { error: "Create your profile first." },
@@ -37,15 +29,13 @@ export async function POST(req: Request) {
   try {
     const levels = calibratedLevels(b.stages);
     const data = {
-      userId: u.userId,
+      user_id: u.userId,
       levels: JSON.stringify(levels),
       stages: JSON.stringify(b.stages),
-      completedAt: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
     };
-    await getDb()
-      .insert(calibrations)
-      .values(data)
-      .onConflictDoUpdate({ target: calibrations.userId, set: data });
+    const { error } = await getSupabase().from("calibrations").upsert(data, { onConflict: "user_id" });
+    if (error) throw error;
     return Response.json({ levels }, { headers: privateHeaders });
   } catch (e) {
     return Response.json(

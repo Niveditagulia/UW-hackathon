@@ -1,4 +1,4 @@
-import {sqlDb} from "../../../db/sql";
+import { getSupabase } from "../../../lib/supabase";
 import { sameOrigin, privateHeaders } from "../../../lib/access";
 import {
   digest,
@@ -9,6 +9,7 @@ import {
 } from "../../../lib/local-session";
 import { cookies } from "next/headers";
 export async function POST(req: Request) {
+  const db = getSupabase();
   if (!sameOrigin(req))
     return Response.json({ error: "Invalid request." }, { status: 403 });
   const b: any = await req.json().catch(() => null);
@@ -18,9 +19,10 @@ export async function POST(req: Request) {
   if (b.action === "logout") {
     const token = (await cookies()).get(sessionCookie)?.value;
     if (token)
-      await sqlDb.prepare("DELETE FROM local_sessions WHERE token_hash=?")
-        .bind(await digest(token))
-        .run();
+      await db
+        .from("local_sessions")
+        .delete()
+        .eq("token_hash", await digest(token));
     return Response.json(
       { ok: true },
       {
@@ -46,11 +48,13 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   const username = b.username.toLowerCase();
-  let row = await sqlDb.prepare(
-    "SELECT * FROM local_accounts WHERE username=?",
-  )
-    .bind(username)
-    .first<any>();
+  const accountResult = await db
+    .from("local_accounts")
+    .select("*")
+    .eq("username", username)
+    .maybeSingle();
+  if (accountResult.error) throw accountResult.error;
+  let row = accountResult.data;
   if (b.action === "register") {
     if (row)
       return Response.json(
@@ -70,13 +74,15 @@ export async function POST(req: Request) {
     const salt = hex(crypto.getRandomValues(new Uint8Array(32))),
       id = crypto.randomUUID();
     const hash = await passwordHash(b.password, salt);
-    try {
-      await sqlDb.prepare(
-        "INSERT INTO local_accounts (id,username,email,role,salt,password_hash) VALUES (?,?,?,?,?,?)",
-      )
-        .bind(id, username, username + "@local.grove", role, salt, hash)
-        .run();
-    } catch {
+    const { error } = await db.from("local_accounts").insert({
+      id,
+      username,
+      email: username + "@local.grove",
+      role,
+      salt,
+      password_hash: hash,
+    });
+    if (error) {
       return Response.json(
         { error: "That username is already registered." },
         { status: 409 },
@@ -90,21 +96,23 @@ export async function POST(req: Request) {
         { status: 401 },
       );
     const now = Date.now();
-    await sqlDb.prepare(
-      "UPDATE local_accounts SET attempts=0,window_start=? WHERE id=? AND window_start<?",
-    )
-      .bind(now, row.id, now - 900000)
-      .run();
-    const attempt = await sqlDb.prepare(
-      "UPDATE local_accounts SET attempts=attempts+1 WHERE id=? AND attempts<5 RETURNING id",
-    )
-      .bind(row.id)
-      .first();
-    if (!attempt)
+    if (row.window_start < now - 900000) {
+      row = { ...row, attempts: 0, window_start: now };
+      const { error } = await db
+        .from("local_accounts")
+        .update({ attempts: 0, window_start: now })
+        .eq("id", row.id);
+      if (error) throw error;
+    }
+    if (row.attempts >= 5)
       return Response.json(
         { error: "Too many attempts. Try again in 15 minutes." },
         { status: 429 },
       );
+    await db
+      .from("local_accounts")
+      .update({ attempts: row.attempts + 1 })
+      .eq("id", row.id);
     if (!equal(await passwordHash(b.password, row.salt), row.password_hash))
       return Response.json(
         { error: "Username or password is incorrect." },
@@ -118,19 +126,19 @@ export async function POST(req: Request) {
   }
   const token = hex(crypto.getRandomValues(new Uint8Array(32))),
     duration = b.remember === true ? 2592000 : 28800;
-  await sqlDb.prepare(
-    "UPDATE local_accounts SET attempts=0,window_start=? WHERE id=?",
-  )
-    .bind(Date.now(), row.id)
-    .run();
-  await sqlDb.prepare("DELETE FROM local_sessions WHERE expires_at<=?")
-    .bind(Date.now())
-    .run();
-  await sqlDb.prepare(
-    "INSERT INTO local_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)",
-  )
-    .bind(await digest(token), row.id, Date.now() + duration * 1000)
-    .run();
+  const now = Date.now();
+  const { error: resetError } = await db
+    .from("local_accounts")
+    .update({ attempts: 0, window_start: now })
+    .eq("id", row.id);
+  if (resetError) throw resetError;
+  await db.from("local_sessions").delete().lte("expires_at", now);
+  const { error: sessionError } = await db.from("local_sessions").insert({
+    token_hash: await digest(token),
+    user_id: row.id,
+    expires_at: now + duration * 1000,
+  });
+  if (sessionError) throw sessionError;
   return Response.json(
     { ok: true, role: row.role },
     {

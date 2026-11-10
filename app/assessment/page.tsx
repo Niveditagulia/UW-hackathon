@@ -1,17 +1,16 @@
 import { requireUser } from "../auth";
-import { getDb } from "../../db";
-import { profiles } from "../../db/schema";
-import { eq } from "drizzle-orm";
+import { getSupabase } from "../../lib/supabase";
 import { redirect } from "next/navigation";
 import Assessment from "./Assessment";
 export const dynamic = "force-dynamic";
 export default async function Page() {
   const u = await requireUser("/assessment");
-  const p = await getDb()
-    .select()
-    .from(profiles)
-    .where(eq(profiles.id, u.userId))
-    .get();
+  const { data: p, error } = await getSupabase()
+    .from("profiles")
+    .select("name")
+    .eq("id", u.userId)
+    .maybeSingle();
+  if (error) throw error;
   if (!p) redirect("/login");
   return <Assessment person={p.name} />;
 }

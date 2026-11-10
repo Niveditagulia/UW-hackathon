@@ -1,4 +1,4 @@
-import {sqlDb} from "../db/sql";
+import { getSupabase } from "./supabase";
 import { cookies } from "next/headers";
 export const sessionCookie = "grove_session";
 export function hex(bytes: ArrayBuffer | Uint8Array) {
@@ -41,11 +41,21 @@ export function equal(a: string, b: string) {
 export async function currentUser() {
   const token = (await cookies()).get(sessionCookie)?.value;
   if (!token) return null;
-  const row = await sqlDb.prepare(
-    "SELECT a.id,a.username,a.email,a.role FROM local_accounts a JOIN local_sessions s ON a.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?",
-  )
-    .bind(await digest(token), Date.now())
-    .first<{ id: string; username: string; email: string; role: string }>();
+  const db = getSupabase();
+  const { data: session, error: sessionError } = await db
+    .from("local_sessions")
+    .select("user_id")
+    .eq("token_hash", await digest(token))
+    .gt("expires_at", Date.now())
+    .maybeSingle();
+  if (sessionError) throw sessionError;
+  if (!session) return null;
+  const { data: row, error: accountError } = await db
+    .from("local_accounts")
+    .select("id,username,email,role")
+    .eq("id", session.user_id)
+    .maybeSingle();
+  if (accountError) throw accountError;
   return row
     ? {
         userId: row.id,

@@ -1,8 +1,6 @@
 import { languageCodes } from "../../../lib/languages";
 import { identity, sameOrigin, privateHeaders } from "../../../lib/access";
-import { getDb } from "../../../db";
-import { profiles } from "../../../db/schema";
-import { eq } from "drizzle-orm";
+import { getSupabase } from "../../../lib/supabase";
 export async function GET() {
   const user = await identity();
   if (!user)
@@ -10,11 +8,12 @@ export async function GET() {
       { error: "Sign in required" },
       { status: 401, headers: privateHeaders },
     );
-  const profile = await getDb()
-    .select()
-    .from(profiles)
-    .where(eq(profiles.id, user.userId))
-    .get();
+  const { data: profile, error } = await getSupabase()
+    .from("profiles")
+    .select("*")
+    .eq("id", user.userId)
+    .maybeSingle();
+  if (error) throw error;
   return Response.json(
     {
       user: {
@@ -24,7 +23,14 @@ export async function GET() {
       },
       profile: profile
         ? {
-            ...profile,
+            id: profile.id,
+            name: profile.name,
+            age: profile.age,
+            gender: profile.gender,
+            language: profile.language,
+            contactType: profile.contact_type,
+            contact: profile.contact,
+            createdAt: profile.created_at,
             passport: profile.passport
               ? "••••" + profile.passport.slice(-4)
               : null,
@@ -79,14 +85,16 @@ export async function POST(request: Request) {
       { error: "Enter a valid phone number." },
       { status: 400 },
     );
-  const existing =
-    b.contactType === "passport"
-      ? await getDb()
-          .select()
-          .from(profiles)
-          .where(eq(profiles.id, user.userId))
-          .get()
-      : null;
+  let existing: { contact: string } | null = null;
+  if (b.contactType === "passport") {
+    const { data, error } = await getSupabase()
+      .from("profiles")
+      .select("contact")
+      .eq("id", user.userId)
+      .maybeSingle();
+    if (error) throw error;
+    existing = data;
+  }
   if (
     b.contactType === "passport" &&
     b.contact !== existing?.contact &&
@@ -102,27 +110,15 @@ export async function POST(request: Request) {
     age: b.age,
     gender: b.gender,
     language: languageCodes.includes(b.language) ? b.language : "en",
-    contactType: b.contactType,
+    contact_type: b.contactType,
     contact:
       b.contactType === "passport"
         ? "••••" + b.contact.slice(-4)
         : b.contact.trim(),
     passport: null,
-    createdAt: new Date().toISOString(),
+    created_at: new Date().toISOString(),
   };
-  await getDb()
-    .insert(profiles)
-    .values(data)
-    .onConflictDoUpdate({
-      target: profiles.id,
-      set: {
-        name: data.name,
-        age: data.age,
-        gender: data.gender,
-        language: data.language,
-        contactType: data.contactType,
-        contact: data.contact,
-      },
-    });
+  const { error } = await getSupabase().from("profiles").upsert(data, { onConflict: "id" });
+  if (error) throw error;
   return Response.json({ ok: true }, { headers: privateHeaders });
 }

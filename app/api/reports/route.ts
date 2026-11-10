@@ -1,8 +1,6 @@
 import { staffAuthenticated } from "../../../lib/staff-auth";
 import { identity, privateHeaders } from "../../../lib/access";
-import { getDb } from "../../../db";
-import { profiles, sessions } from "../../../db/schema";
-import { eq, asc } from "drizzle-orm";
+import { getSupabase } from "../../../lib/supabase";
 export async function GET(req: Request) {
   const u = await identity();
   if (!u) return Response.json({ error: "Sign in required" }, { status: 401 });
@@ -13,32 +11,24 @@ export async function GET(req: Request) {
   if (new URL(req.url).searchParams.has("all")) {
     if (!staffOk)
       return Response.json({ error: "Staff access required" }, { status: 403 });
+    const { data, error } = await getSupabase().from("profiles").select("id,name,age,gender,created_at");
+    if (error) throw error;
     return Response.json(
-      await getDb()
-        .select({
-          id: profiles.id,
-          name: profiles.name,
-          age: profiles.age,
-          gender: profiles.gender,
-          createdAt: profiles.createdAt,
-        })
-        .from(profiles),
+      (data || []).map((person: any) => ({
+        ...person,
+        createdAt: person.created_at,
+      })),
       { headers: privateHeaders },
     );
   }
   const id = requested || u.userId;
-  const profile = await getDb()
-    .select({ name: profiles.name, age: profiles.age, gender: profiles.gender })
-    .from(profiles)
-    .where(eq(profiles.id, id))
-    .get();
-  const records = await getDb()
-    .select()
-    .from(sessions)
-    .where(eq(sessions.userId, id))
-    .orderBy(asc(sessions.date));
+  const db = getSupabase();
+  const { data: profile, error: profileError } = await db.from("profiles").select("name,age,gender").eq("id", id).maybeSingle();
+  if (profileError) throw profileError;
+  const { data: records, error: recordError } = await db.from("sessions").select("*").eq("user_id", id).order("date");
+  if (recordError) throw recordError;
   return Response.json(
-    { profile, sessions: records },
+    { profile, sessions: records || [] },
     { headers: privateHeaders },
   );
 }

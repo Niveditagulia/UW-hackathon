@@ -1,18 +1,15 @@
 import { identity, sameOrigin, privateHeaders } from "../../../lib/access";
-import { getDb } from "../../../db";
-import { sessions, calibrations } from "../../../db/schema";
-import { eq, asc } from "drizzle-orm";
+import { getSupabase } from "../../../lib/supabase";
 export async function GET() {
   const u = await identity();
   if (!u) return Response.json({ error: "Sign in required" }, { status: 401 });
-  return Response.json(
-    await getDb()
-      .select()
-      .from(sessions)
-      .where(eq(sessions.userId, u.userId))
-      .orderBy(asc(sessions.date)),
-    { headers: privateHeaders },
-  );
+  const { data, error } = await getSupabase()
+    .from("sessions")
+    .select("*")
+    .eq("user_id", u.userId)
+    .order("date");
+  if (error) throw error;
+  return Response.json(data || [], { headers: privateHeaders });
 }
 export async function POST(req: Request) {
   if (!sameOrigin(req))
@@ -39,11 +36,8 @@ export async function POST(req: Request) {
     b.speed > 3600000
   )
     return Response.json({ error: "Invalid session" }, { status: 400 });
-  const c = await getDb()
-    .select()
-    .from(calibrations)
-    .where(eq(calibrations.userId, u.userId))
-    .get();
+  const { data: c, error: calibrationError } = await getSupabase().from("calibrations").select("levels").eq("user_id", u.userId).maybeSingle();
+  if (calibrationError) throw calibrationError;
   if (!c)
     return Response.json(
       { error: "Complete the starting-level assessment first." },
@@ -54,17 +48,17 @@ export async function POST(req: Request) {
       { error: "Your level changed. Reload before starting another game." },
       { status: 409 },
     );
-  await getDb()
-    .insert(sessions)
-    .values({
+  const { error: insertError } = await getSupabase()
+    .from("sessions")
+    .upsert({
       id: u.userId + ":" + b.id,
-      userId: u.userId,
+      user_id: u.userId,
       date: new Date().toISOString(),
       game: b.game,
       accuracy: Math.round((b.correct / 8) * 100),
       speed: b.speed,
       level: b.level,
-    })
-    .onConflictDoNothing();
+    }, { onConflict: "id", ignoreDuplicates: true });
+  if (insertError) throw insertError;
   return Response.json({ ok: true }, { headers: privateHeaders });
 }
