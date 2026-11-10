@@ -8,10 +8,13 @@ let client: any;
 export function getSupabase(): any {
   if (client) return client;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Supabase now issues sb_secret_ keys. Keep legacy support for projects
+  // still using the older service_role key name.
+  const key =
+    process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     throw new Error(
-      "Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel before deploying.",
+      "Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY in Vercel before deploying.",
     );
   }
   client = createClient<any>(url, key, {

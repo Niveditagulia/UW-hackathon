@@ -64,11 +64,11 @@ Language preferences are saved; the interface is currently English. Trend summar
 ## Vercel deployment
 
 1. Create a free Supabase project at https://supabase.com/dashboard. Open **SQL Editor**, create a new query, paste the entire contents of `supabase/schema.sql`, then click **Run**.
-2. In Supabase, open **Project Settings → API**. Copy the **Project URL** and the `service_role` secret key.
+2. In Supabase, open **Project Settings → Data API**. Copy the **Project URL**. Then open **API Keys** and copy the default **Secret key** (it begins `sb_secret_`).
 3. Import `Niveditagulia/UW-hackathon` into Vercel. Select **Next.js** with root directory `./`.
 4. Add these Vercel environment variables for **Production** and **Preview**:
    - `NEXT_PUBLIC_SUPABASE_URL`: the Project URL.
-   - `SUPABASE_SERVICE_ROLE_KEY`: the `service_role` secret key. Keep this private.
+   - `SUPABASE_SECRET_KEY`: the Supabase Secret key beginning `sb_secret_`. Keep this private.
    - `STAFF_REGISTRATION_CODE`: a long private code used only to create staff accounts.
 5. Deploy. Then register resident and staff accounts on your Vercel URL.
 
